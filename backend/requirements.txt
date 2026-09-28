@@ -1,0 +1,11 @@
+# 运行与测试所需的轻量依赖（离线可装）。
+fastapi>=0.104,<1.0
+uvicorn[standard]>=0.24
+python-multipart>=0.0.6
+pydantic>=2.5,<3
+pydantic-settings>=2.1
+sqlalchemy>=2.0
+python-dotenv>=1.0
+aiofiles>=23.2.1
+httpx>=0.24
+pytest>=7.4
