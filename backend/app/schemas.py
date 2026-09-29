@@ -69,7 +69,7 @@ class TranscriptionSegment(TranscriptionBase):
     speaker_name: str = "未知说话人"
     speaker_role: str = "informant"
     created_at: datetime
-    updated_at: datetime
+    updated_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

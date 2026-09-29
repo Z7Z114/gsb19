@@ -42,6 +42,12 @@ class PyannoteService:
 
     async def diarize_audio(self, audio_path: str) -> List[Dict[str, Any]]:
         try:
+            self._load_pipeline()
+        except Exception as e:
+            logger.warning(f"Pyannote pipeline unavailable, falling back to mock diarization: {e}")
+            return self._generate_mock_diarization()
+
+        try:
             loop = asyncio.get_event_loop()
             diarization = await loop.run_in_executor(
                 None,
@@ -51,7 +57,7 @@ class PyannoteService:
             return diarization
         except Exception as e:
             logger.error(f"Diarization failed: {e}")
-            return self._generate_mock_diarization()
+            raise
 
     def _run_diarization(self, audio_path: str) -> List[Dict[str, Any]]:
         pipeline = self._load_pipeline()

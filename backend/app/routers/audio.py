@@ -17,6 +17,16 @@ router = APIRouter(prefix="/audio", tags=["audio"])
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+AUDIO_MEDIA_TYPES = {
+    ".wav": "audio/wav",
+    ".mp3": "audio/mpeg",
+    ".m4a": "audio/mp4",
+    ".aac": "audio/aac",
+    ".flac": "audio/flac",
+    ".ogg": "audio/ogg",
+    ".webm": "audio/webm",
+}
+
 
 @router.post("/upload", response_model=UploadResponse)
 async def upload_audio(
@@ -75,8 +85,11 @@ async def stream_audio(session_id: str, db: Session = Depends(get_db)):
     if not os.path.exists(db_session.file_path):
         raise HTTPException(status_code=404, detail="音频文件不存在")
 
+    file_extension = os.path.splitext(db_session.file_path)[1].lower()
+    media_type = AUDIO_MEDIA_TYPES.get(file_extension, "application/octet-stream")
+
     return FileResponse(
         db_session.file_path,
-        media_type="audio/mpeg",
+        media_type=media_type,
         filename=db_session.filename
     )

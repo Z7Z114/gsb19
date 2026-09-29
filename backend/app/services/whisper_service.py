@@ -62,6 +62,12 @@ class WhisperService:
         dialect: str = None
     ) -> Dict[str, Any]:
         try:
+            self._load_model()
+        except Exception as e:
+            logger.warning(f"Whisper model unavailable, falling back to mock transcription: {e}")
+            return self._generate_mock_transcription(start_time, end_time)
+
+        try:
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(
                 None,
@@ -74,7 +80,7 @@ class WhisperService:
             return result
         except Exception as e:
             logger.error(f"Transcription failed for segment {start_time}-{end_time}: {e}")
-            return self._generate_mock_transcription(start_time, end_time)
+            raise
 
     def _transcribe_segment_sync(
         self,
@@ -127,19 +133,15 @@ class WhisperService:
             if seg["duration"] < 0.3:
                 continue
 
-            try:
-                result = await self.transcribe_segment(
-                    audio_path,
-                    seg["start_time"],
-                    seg["end_time"],
-                    dialect
-                )
-                result["speaker_label"] = seg["speaker_label"]
-                result["speaker_role"] = seg.get("speaker_role", "informant")
-                transcriptions.append(result)
-            except Exception as e:
-                logger.warning(f"Failed to transcribe segment {i}: {e}")
-                continue
+            result = await self.transcribe_segment(
+                audio_path,
+                seg["start_time"],
+                seg["end_time"],
+                dialect
+            )
+            result["speaker_label"] = seg["speaker_label"]
+            result["speaker_role"] = seg.get("speaker_role", "informant")
+            transcriptions.append(result)
 
         return transcriptions
 

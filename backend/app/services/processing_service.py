@@ -27,6 +27,8 @@ class ProcessingService:
             if not db_session:
                 raise Exception(f"Session {session_id} not found")
 
+            self._clear_previous_results(db, session_id)
+
             self._update_status(db, db_session, "diarizing", 10, "正在进行说话人分离...")
 
             diarization_segments = await pyannote_service.diarize_audio(audio_path)
@@ -74,6 +76,8 @@ class ProcessingService:
             db_session = db.query(DBSession).filter(DBSession.id == session_id).first()
             if db_session:
                 self._update_status(db, db_session, "error", 0, f"处理失败: {str(e)}")
+                db_session.error_message = str(e)
+                db.commit()
             return False
 
     async def generate_report(
@@ -176,8 +180,8 @@ class ProcessingService:
             "current_step": db_session.current_step or ""
         }
 
-    def generate_report_markdown(self, report: Report) -> str:
-        report_data = {
+    def _report_to_data(self, report: Report) -> Dict[str, Any]:
+        return {
             "id": report.id,
             "title": report.title,
             "dialect_name": report.dialect_name,
@@ -191,7 +195,9 @@ class ProcessingService:
             "transcription_count": len(report.session.transcriptions) if report.session else 0,
             "total_duration": report.session.total_duration if report.session else 0
         }
-        return markdown_service.generate_report_markdown(report_data)
+
+    def generate_report_markdown(self, report: Report) -> str:
+        return markdown_service.generate_report_markdown(self._report_to_data(report))
 
     async def submit_report_to_committee(
         self,
@@ -201,20 +207,7 @@ class ProcessingService:
         body: str = None,
         db: Session = None
     ) -> bool:
-        report_data = {
-            "id": report.id,
-            "title": report.title,
-            "dialect_name": report.dialect_name,
-            "region": report.region,
-            "fieldwork_date": report.fieldwork_date.isoformat() if report.fieldwork_date else "",
-            "researchers": report.researchers,
-            "informants": report.informants,
-            "summary": report.summary,
-            "key_features": report.key_features,
-            "endangerment": report.endangerment
-        }
-
-        email_data = markdown_service.generate_submission_email(report_data)
+        email_data = markdown_service.generate_submission_email(self._report_to_data(report))
 
         attachments = email_data.get("attachments", [])
         if body:
@@ -251,15 +244,21 @@ class ProcessingService:
         db.commit()
 
     def _save_speakers(self, db: Session, db_session: DBSession, segments: List[Dict[str, Any]]):
-        speaker_labels = list(set(seg["speaker_label"] for seg in segments))
+        speaker_labels = []
+        for seg in segments:
+            label = seg["speaker_label"]
+            if label not in speaker_labels:
+                speaker_labels.append(label)
 
+        role_counters: Dict[str, int] = {}
         for label in speaker_labels:
             role = next(
                 (seg["speaker_role"] for seg in segments if seg["speaker_label"] == label),
                 "informant"
             )
             name = "发音人" if role == "informant" else "研究员"
-            speaker_index = sum(1 for s in db_session.speakers if s.role == role) + 1
+            role_counters[role] = role_counters.get(role, 0) + 1
+            speaker_index = role_counters[role]
 
             speaker = Speaker(
                 session_id=db_session.id,
@@ -271,6 +270,15 @@ class ProcessingService:
             )
             db.add(speaker)
 
+        db.commit()
+
+    def _clear_previous_results(self, db: Session, session_id: str):
+        db.query(Transcription).filter(
+            Transcription.session_id == session_id
+        ).delete(synchronize_session=False)
+        db.query(Speaker).filter(
+            Speaker.session_id == session_id
+        ).delete(synchronize_session=False)
         db.commit()
 
     def _save_transcriptions(
